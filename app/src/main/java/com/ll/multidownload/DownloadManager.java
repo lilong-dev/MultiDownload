@@ -1,33 +1,28 @@
 package com.ll.multidownload;
 
-import android.app.IntentService;
 import android.content.Context;
-import android.content.Intent;
 import android.os.Handler;
-import android.util.ArrayMap;
-import android.util.Log;
-import android.util.SparseArray;
 
 import com.ll.multidownload.bean.DownloadInfo;
 import com.ll.multidownload.db.DBManager;
 
-import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Created by admin on 2017/3/28.
  * download manager
  */
 
-public class DownloadManager{
+public class DownloadManager {
     private String downloadUrl;//下载的地址
     private String localPath;//保存的地址
     private int completeSize;//已经下载的大小
@@ -44,13 +39,16 @@ public class DownloadManager{
     private String fileName;
     static final int INIT_COMPLETED = 4;//初始化完成
     static final int DOWNLOAD_COMPLETED = 5;//下载完成
-    public DownloadManager(Context context,String downloadUrl, String localPath,String fileName,int threadNum,Handler handler){
+
+    private ExecutorService executorService;
+    public DownloadManager(Context context, String downloadUrl, String localPath, String fileName, int threadNum, Handler handler){
         this.downloadUrl = downloadUrl;
         this.localPath = localPath;
         this.threadNum = threadNum;
         this.mHandler = handler;
         this.fileName = fileName;
         this.dbManager = new DBManager(context);
+        executorService = Executors.newFixedThreadPool(this.threadNum);
     }
 
     /**
@@ -139,13 +137,14 @@ public class DownloadManager{
         if(state == DOWNLOADING) return;
         state = DOWNLOADING;
         for(DownloadInfo info:infos){
-            new DownloadThread(info.getThreadId(),info.getStartPos(),info.getEndPos(),info.getCompleteSize(),info.getDownloadUrl()).start();
+           // new DownloadThread(info.getThreadId(),info.getStartPos(),info.getEndPos(),info.getCompleteSize(),info.getDownloadUrl()).start();
+            executorService.execute(new DownloadThread(info.getThreadId(),info.getStartPos(),info.getEndPos(),info.getCompleteSize(),info.getDownloadUrl()));
         }
     }
     /**
      * 下载线程
      */
-    class DownloadThread extends Thread{
+    class DownloadThread implements Runnable{
          private int threadId;
          private int startPos;
          private int endPos;
@@ -161,7 +160,6 @@ public class DownloadManager{
 
         @Override
         public void run() {
-            super.run();
             HttpURLConnection connection = null;
             RandomAccessFile raf = null;
             InputStream inputStream = null;
@@ -198,6 +196,7 @@ public class DownloadManager{
                 }
             } catch (Exception e) {
                 e.printStackTrace();
+                executorService.shutdown();
             }finally {
                 try {
                     if (connection != null)
@@ -239,6 +238,7 @@ public class DownloadManager{
         if(completeSize < fileSize){
            return false;
         }else{
+           executorService.shutdown();//下载完成，关闭线程池
            return true;
         }
     }
